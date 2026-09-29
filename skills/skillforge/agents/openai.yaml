@@ -1,4 +1,0 @@
-interface:
-  display_name: "Skillforge"
-  short_description: "Draft and scaffold OpenClaw-ready agent skills"
-  default_prompt: "Use $skillforge to draft a skill spec from a brief and tool catalog, or scaffold a skill folder from a JSON spec."
