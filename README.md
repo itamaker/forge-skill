@@ -1,5 +1,9 @@
 # skillforge
 
+> **Moved.** The skill in this repository now lives in [itamaker/skills](https://github.com/itamaker/skills/tree/main/skills/agent-tooling/skillforge), together with my other skills. Install from there: `npx skills@latest add itamaker/skills --skill=skillforge`.
+>
+> This repository still hosts the command-line tool's source and releases.
+
 [![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
 
 `skillforge` is a Go CLI for drafting and scaffolding OpenClaw-ready skills from briefs, tool catalogs, and JSON specs.
