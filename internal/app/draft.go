@@ -165,26 +165,30 @@ func inferCategory(brief string, tags []string) string {
 }
 
 func inferTriggers(brief string, tags []string) []string {
-	candidates := []string{
+	generic := []string{
 		"You need a consistent workflow instead of one-off prompts.",
 		"You want reproducible output that can be validated before shipping.",
 	}
 
+	// Category-specific triggers come first: init turns the first triggers
+	// into the "Use when ..." clause of the SKILL.md description, and the
+	// specific ones are the more useful text for an agent deciding to load it.
+	var specific []string
 	body := strings.ToLower(brief)
 	switch {
 	case strings.Contains(body, "retrieval") || containsTag(tags, "retrieval"):
-		candidates = append(candidates,
+		specific = append(specific,
 			"You are comparing retrieval runs, benchmark regressions, or miss patterns.",
 			"You need a short diagnosis of why a RAG system degraded.")
 	case strings.Contains(body, "dataset") || containsTag(tags, "dataset"):
-		candidates = append(candidates,
+		specific = append(specific,
 			"You are preparing train or eval data and want to catch quality issues early.")
 	case strings.Contains(body, "prompt") || containsTag(tags, "prompting"):
-		candidates = append(candidates,
+		specific = append(specific,
 			"You are testing prompt variants and need a controlled prompt pack.")
 	}
 
-	return uniqueNonEmpty(candidates)
+	return uniqueNonEmpty(append(specific, generic...))
 }
 
 func inferConstraints(brief string) []string {

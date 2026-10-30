@@ -111,3 +111,15 @@ func TestLoadToolCatalogWrappedShape(t *testing.T) {
 		t.Fatalf("tools = %+v, want dataset-scan", tools)
 	}
 }
+
+func TestDraftTriggersListSpecificBeforeGeneric(t *testing.T) {
+	t.Parallel()
+
+	spec := draftSpec("# Retrieval Evaluator\nCompare retrieval runs.\n", nil, "", 1)
+	if len(spec.Triggers) < 3 || !strings.Contains(spec.Triggers[0], "retrieval runs") {
+		t.Fatalf("Triggers = %q, want the retrieval-specific trigger first", spec.Triggers)
+	}
+	if !strings.Contains(spec.Triggers[len(spec.Triggers)-1], "reproducible output") {
+		t.Fatalf("Triggers = %q, want generic triggers last", spec.Triggers)
+	}
+}

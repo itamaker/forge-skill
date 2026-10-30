@@ -26,6 +26,7 @@ func scaffold(spec SkillSpec, outDir string, force bool) error {
 
 	paths := []string{
 		outDir,
+		filepath.Join(outDir, "agents"),
 		filepath.Join(outDir, "bin"),
 		filepath.Join(outDir, "examples"),
 	}
@@ -35,9 +36,8 @@ func scaffold(spec SkillSpec, outDir string, force bool) error {
 		}
 	}
 
-	if spec.Slug == "" {
-		spec.Slug = slugify(spec.Name)
-	}
+	// The slug doubles as the Agent Skills `name`, so keep it valid.
+	spec.Slug = skillName(spec)
 
 	manifest, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
@@ -45,10 +45,11 @@ func scaffold(spec SkillSpec, outDir string, force bool) error {
 	}
 
 	files := map[string]string{
-		filepath.Join(outDir, "SKILL.md"):             renderSkillMarkdown(spec),
-		filepath.Join(outDir, "manifest.json"):        string(manifest) + "\n",
-		filepath.Join(outDir, "bin", "README.md"):     renderBinReadme(spec),
-		filepath.Join(outDir, "examples", "usage.md"): renderUsageGuide(spec),
+		filepath.Join(outDir, "SKILL.md"):              renderSkillMarkdown(spec),
+		filepath.Join(outDir, "agents", "openai.yaml"): renderOpenAIYaml(spec),
+		filepath.Join(outDir, "manifest.json"):         string(manifest) + "\n",
+		filepath.Join(outDir, "bin", "README.md"):      renderBinReadme(spec),
+		filepath.Join(outDir, "examples", "usage.md"):  renderUsageGuide(spec),
 	}
 
 	for path, content := range files {
@@ -62,6 +63,7 @@ func scaffold(spec SkillSpec, outDir string, force bool) error {
 
 func renderSkillMarkdown(spec SkillSpec) string {
 	var builder strings.Builder
+	builder.WriteString(renderFrontmatter(spec))
 	builder.WriteString("# " + spec.Name + "\n\n")
 	builder.WriteString(spec.Description + "\n\n")
 
@@ -138,7 +140,7 @@ func renderSkillMarkdown(spec SkillSpec) string {
 	}
 
 	builder.WriteString("\n## Usage\n\n")
-	builder.WriteString("Place this directory in your workspace and point your agent platform at `SKILL.md`.\n")
+	builder.WriteString("Place this directory in your agent's skills folder and keep the folder name equal to the `name` in the frontmatter above (`" + skillName(spec) + "`). Claude Code and Codex load `SKILL.md` from there.\n")
 	return builder.String()
 }
 

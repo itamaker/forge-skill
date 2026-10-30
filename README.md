@@ -62,10 +62,34 @@ skillforge draft -brief examples/brief.md -catalog examples/tools.json -out /tmp
 
 The generated directory includes:
 
-- `SKILL.md`
+- `SKILL.md`, starting with YAML frontmatter (`name`, `description`) so Claude Code, Codex and skills.sh can load it
+- `agents/openai.yaml` (`interface.display_name`, `short_description`, `default_prompt`)
 - `manifest.json`
 - `bin/README.md`
 - `examples/usage.md`
+
+### Frontmatter and folder name
+
+- `name` is the spec `slug` (or the slugified `name`), sanitised to lowercase letters, digits and single hyphens, at most 64 characters.
+- `description` is the spec description as one YAML-quoted line, at most 300 characters. If it has no "Use when" clause and the spec has `triggers`, a `Use when ...` clause built from the first one or two triggers is appended.
+- Claude Code and Codex expect the skill folder name to equal `name`. Name the `-out` folder after the slug; `init` prints a one-line warning on stderr (exit code unchanged) when it differs.
+
+### Review drafted specs before `init`
+
+`draft` fills `triggers`, `constraints`, `checks` and `workflow` from category defaults. It prints a `review:` note on stderr to say so (stdout and the spec JSON are unchanged). Edit those fields, especially `triggers`, which feed the SKILL.md description, before running `init`.
+
+### Help and version
+
+```bash
+skillforge --help          # also: -h, help
+skillforge init --help     # also: skillforge help init
+skillforge draft --help
+skillforge --version       # also: version
+```
+
+Help and version print to stdout and exit `0`. Usage errors exit `2`, failures exit `1`.
+
+Running `skillforge` with no arguments (or `skillforge tui`) launches the interactive terminal UI. Scripts and coding agents must not do that; use `init` and `draft`.
 
 ## Requirements
 
@@ -106,8 +130,8 @@ go build -o dist/skillforge .
 1. Loads a compact JSON skill spec.
 2. Validates required fields such as `name`, `description`, and `tools`.
 3. Can draft a richer spec from a natural-language brief by retrieving relevant tools from a local catalog.
-4. Generates a portable skill folder with workflow, constraints, checks, docs, and manifest files.
-5. Produces output that can be moved into OpenClaw-style agent workspaces.
+4. Generates a portable skill folder with a frontmatter-headed `SKILL.md`, `agents/openai.yaml`, workflow, constraints, checks, docs, and a manifest.
+5. Produces output that can be dropped into a Claude Code, Codex, or OpenClaw-style skills folder.
 
 ## Notes
 
