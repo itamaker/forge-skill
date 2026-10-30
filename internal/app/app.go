@@ -15,6 +15,16 @@ func Run(args []string) int {
 		return runTUI()
 	}
 
+	// "help" and "version" directly after a subcommand behave like the flags.
+	if len(args) > 1 && (args[0] == "init" || args[0] == "draft" || args[0] == "tui" || args[0] == "interactive") {
+		switch {
+		case args[1] == "help":
+			return runHelp([]string{args[0]})
+		case isVersionArg(args[1]):
+			return runVersion()
+		}
+	}
+
 	switch args[0] {
 	case "init":
 		return runInit(args[1:])
@@ -22,15 +32,13 @@ func Run(args []string) int {
 		return runDraft(args[1:])
 	case "tui", "interactive":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			fmt.Fprint(os.Stdout, tuiUsageText)
-			return 0
+			return runHelp([]string{"tui"})
 		}
 		return runTUI()
 	case "help", "-h", "-help", "--help":
 		return runHelp(args[1:])
 	case "version", "-version", "--version":
-		fmt.Fprintln(os.Stdout, "skillforge "+versionString())
-		return 0
+		return runVersion()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n", args[0])
 		fmt.Fprint(os.Stderr, usageText)
@@ -60,6 +68,19 @@ func runHelp(args []string) int {
 		fmt.Fprint(os.Stderr, usageText)
 		return 2
 	}
+}
+
+func runVersion() int {
+	fmt.Fprintln(os.Stdout, "skillforge "+versionString())
+	return 0
+}
+
+func isVersionArg(arg string) bool {
+	switch arg {
+	case "version", "-version", "--version":
+		return true
+	}
+	return false
 }
 
 func isHelpArg(arg string) bool {

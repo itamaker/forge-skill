@@ -51,7 +51,9 @@ func TestHelpAndVersionExitZero(t *testing.T) {
 		{"help", "init"}, {"help", "draft"}, {"help", "tui"},
 		{"init", "-h"}, {"init", "--help"},
 		{"draft", "-h"}, {"draft", "--help"},
-		{"tui", "--help"},
+		{"tui", "--help"}, {"tui", "help"}, {"tui", "--version"},
+		{"init", "help"}, {"draft", "help"},
+		{"init", "--version"}, {"init", "version"}, {"draft", "--version"}, {"draft", "version"},
 		{"version"}, {"--version"},
 	}
 	for _, args := range cases {
@@ -93,6 +95,29 @@ func TestHelpContent(t *testing.T) {
 	_, stdout, _ = runCapturing(t, "version")
 	if !strings.HasPrefix(stdout, "skillforge ") {
 		t.Errorf("version output = %q", stdout)
+	}
+}
+
+func TestSubcommandHelpMatchesFlagHelp(t *testing.T) {
+	for _, name := range []string{"init", "draft"} {
+		_, viaFlag, _ := runCapturing(t, name, "-h")
+		_, viaWord, _ := runCapturing(t, name, "help")
+		if viaFlag == "" || viaFlag != viaWord {
+			t.Errorf("%s help differs between -h and help:\n%q\n%q", name, viaFlag, viaWord)
+		}
+	}
+}
+
+func TestVersionAfterFlagValueIsNotHijacked(t *testing.T) {
+	// "version" as a flag value must still be parsed as a value.
+	dir := t.TempDir()
+	brief := filepath.Join(dir, "brief.md")
+	if err := os.WriteFile(brief, []byte("# T\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := runCapturing(t, "draft", "-brief", brief, "-name", "version")
+	if code != 0 || !strings.Contains(stdout, `"name": "version"`) {
+		t.Errorf("draft -name version: code %d, stdout %q", code, stdout)
 	}
 }
 
