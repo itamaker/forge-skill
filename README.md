@@ -1,8 +1,8 @@
 # skillforge
 
-> **Moved.** The Claude Code skill for this tool now lives in [itamaker/skills](https://github.com/itamaker/skills/tree/main/skills/agent-tooling/skillforge), together with my other skills. Install from there: `npx skills@latest add itamaker/skills --skill=skillforge`.
+> **Archived.** This repository is no longer maintained. The skillforge agent skill was removed from [itamaker/skills](https://github.com/itamaker/skills) in v2.0.0.
 >
-> This repository still hosts the command-line tool's source and releases.
+> The v0.3.0 command-line tool and its releases stay available here and through `brew install itamaker/tap/skillforge`. The branch `fix/init-valid-skill-output` keeps an unmerged change that makes `init` write a loadable skill (frontmatter and `agents/openai.yaml`) and adds `-h` and `--version`.
 
 [![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
 
