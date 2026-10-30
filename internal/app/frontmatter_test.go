@@ -62,6 +62,8 @@ func TestSkillNameSanitizes(t *testing.T) {
 		{"检索评估", ""},
 		{"Café Tool", "caf-tool"},
 		{"", ""},
+		// The 64th character is a hyphen: it must be trimmed, not kept.
+		{strings.Repeat("a", 63) + "-b", strings.Repeat("a", 63)},
 	}
 	for _, tc := range cases {
 		if got := sanitizeSkillName(tc.in); got != tc.want {
@@ -75,8 +77,8 @@ func TestSkillNameSanitizes(t *testing.T) {
 		t.Errorf("long name sanitized to %q (len %d), want valid and <= %d", got, len(got), maxSkillNameLen)
 	}
 
-	if got := skillName(SkillSpec{Name: "检索评估"}); got != fallbackSkillName {
-		t.Errorf("skillName with unusable name = %q, want %q", got, fallbackSkillName)
+	if got := skillName(SkillSpec{Name: "检索评估", Slug: "检索"}); got != "" {
+		t.Errorf("skillName with unusable name = %q, want empty (no silent fallback)", got)
 	}
 	if got := skillName(SkillSpec{Name: "Display Name", Slug: "Bad Slug!"}); got != "bad-slug" {
 		t.Errorf("skillName should sanitize the slug, got %q", got)
@@ -161,10 +163,18 @@ func TestSkillDescriptionLengthLimits(t *testing.T) {
 		t.Fatalf("expected only the first trigger, got %q", got)
 	}
 
-	// No trigger fits: description is kept without a Use when clause.
+	// No trigger fits: description is kept without a Use when clause, and
+	// the caller is told so.
 	spec.Triggers = []string{"You need " + strings.Repeat("b", 400)}
-	if got := skillDescription(spec); got != spec.Description {
+	got, notes := buildDescription(spec)
+	if got != spec.Description {
 		t.Fatalf("description with oversized trigger = %q, want unchanged", got)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "Use when") {
+		t.Fatalf("notes = %q, want one note about the omitted Use when clause", notes)
+	}
+	if _, notes := buildDescription(SkillSpec{Name: "X", Description: "Short."}); len(notes) != 0 {
+		t.Fatalf("no triggers, no note expected, got %q", notes)
 	}
 
 	// An over-long description is cut at a word boundary within the limit,
@@ -348,5 +358,197 @@ func TestFolderNameWarning(t *testing.T) {
 	if !strings.HasPrefix(got, "warning:") || strings.Contains(got, "\n") ||
 		!strings.Contains(got, `"out"`) || !strings.Contains(got, `"retrieval-evaluator"`) {
 		t.Errorf("unexpected warning: %q", got)
+	}
+}
+
+func TestSanitizeSkillNameIsASCIIOnly(t *testing.T) {
+	t.Parallel()
+
+	if got := slugify("检索评估"); got != "" {
+		t.Errorf("slugify(CJK) = %q, want empty", got)
+	}
+	if got := slugify("Café Tool 检索"); got != "caf-tool" {
+		t.Errorf("slugify mixed = %q, want caf-tool", got)
+	}
+	// draft must show the slug init will use.
+	spec := draftSpec("# Retrieval Evaluator\nx\n", nil, "", 1)
+	if spec.Slug != skillName(spec) {
+		t.Errorf("draft slug %q != init skill name %q", spec.Slug, skillName(spec))
+	}
+	cjk := draftSpec("# 检索评估\n检索评估技能\n", nil, "", 1)
+	if cjk.Slug != "" || skillName(cjk) != "" {
+		t.Errorf("CJK draft slug = %q, name = %q, want both empty", cjk.Slug, skillName(cjk))
+	}
+}
+
+func TestScaffoldRejectsSpecWithoutASCIIName(t *testing.T) {
+	t.Parallel()
+
+	spec := SkillSpec{
+		Name:        "检索评估",
+		Description: "x",
+		Tools:       []ToolSpec{{Name: "t", Command: "t", Description: "d"}},
+	}
+	outDir := filepath.Join(t.TempDir(), "out")
+	// An existing output dir must survive a rejected spec even with force.
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(outDir, "keep.txt")
+	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := scaffold(spec, outDir, true)
+	if err == nil || !strings.Contains(err.Error(), "set an ASCII `slug` in the spec") {
+		t.Fatalf("scaffold() error = %v, want the ASCII slug message", err)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Errorf("rejected spec must not touch the output dir: %v", statErr)
+	}
+
+	spec.Slug = "retrieval-evaluator"
+	if err := scaffold(spec, filepath.Join(t.TempDir(), "retrieval-evaluator"), false); err != nil {
+		t.Errorf("an ASCII slug should make the spec valid: %v", err)
+	}
+}
+
+func TestYAMLQuoteEscapesCharactersInvalidInYAML(t *testing.T) {
+	t.Parallel()
+
+	got := yamlQuote("a\x7fb\u0080c\u0085d\u009fe\ufffe\uffff\ufeff\u2028f")
+	want := `"a\u007Fb\u0080c\u0085d\u009Fe\uFFFE\uFFFF\uFEFF\u2028f"`
+	if got != want {
+		t.Fatalf("yamlQuote =\n%s\nwant\n%s", got, want)
+	}
+
+	// Property: nothing in the output is outside the YAML c-printable set,
+	// whatever the input.
+	inputs := []string{"plain", "tab\tnew\nline", "检索 — ok", "\U0001F600 emoji", "bad\xffutf8", "\x00\x01\x1f\x7f"}
+	for r := rune(0); r < 0x300; r++ {
+		inputs = append(inputs, "x"+string(r)+"y")
+	}
+	for _, in := range inputs {
+		out := yamlQuote(in)
+		for _, r := range out {
+			if r == '\n' || r == '\r' || !yamlSafeRune(r) {
+				t.Errorf("yamlQuote(%q) = %s contains unsafe rune %U", in, out, r)
+				break
+			}
+		}
+		// Still a valid JSON string, i.e. a valid YAML double-quoted scalar.
+		var back string
+		if err := json.Unmarshal([]byte(out), &back); err != nil {
+			t.Errorf("yamlQuote(%q) = %s is not a valid quoted scalar: %v", in, out, err)
+		}
+	}
+}
+
+func TestTriggerClause(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"You need a repeatable review.": "you need a repeatable review",
+		"GitHub issues pile up":         "GitHub issues pile up",
+		"OAuth tokens expire":           "OAuth tokens expire",
+		"JavaScript bundles grow":       "JavaScript bundles grow",
+		"Q&A pages need review":         "Q&A pages need review",
+		"RAG runs regress":              "RAG runs regress",
+		"SKILL.md files are missing":    "SKILL.md files are missing",
+		"I need a second opinion.":      "I need a second opinion",
+		"I'm reviewing a diff":          "I'm reviewing a diff",
+		"Reviewing a diff; again":       "reviewing a diff; again",
+		"already lowercase":             "already lowercase",
+		"  Spaces   collapse. ":         "spaces collapse",
+		"":                              "",
+		"3 files changed":               "3 files changed",
+		"Écrire des notes":              "écrire des notes",
+	}
+	for in, want := range cases {
+		if got := triggerClause(in); got != want {
+			t.Errorf("triggerClause(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDefaultPromptKeepsProperNouns(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"GitHub issue triage and labelling.": "Use $x to GitHub issue triage and labelling.",
+		"Triage GitHub issues.":              "Use $x to triage GitHub issues.",
+		"I review diffs.":                    "Use $x to I review diffs.",
+		"":                                   "Use $x to name.",
+	}
+	for desc, want := range cases {
+		if got := defaultPrompt(SkillSpec{Name: "name", Description: desc}, "x"); got != want {
+			t.Errorf("defaultPrompt(%q) = %q, want %q", desc, got, want)
+		}
+	}
+}
+
+func TestHasUseWhenWholePhraseOnly(t *testing.T) {
+	t.Parallel()
+
+	yes := []string{"Lint configs. Use when asked.", "use when the user asks", "USE WHEN needed", "x. Use when, in doubt, ask"}
+	no := []string{
+		"A reuse when possible policy",
+		"Prevents misuse whenever it can",
+		"Use whenever you like",
+		"Do not use when offline",
+		"Never use when offline",
+		"Don't use when offline",
+		"Lint configs.",
+	}
+	for _, text := range yes {
+		if !hasUseWhen(text) {
+			t.Errorf("hasUseWhen(%q) = false, want true", text)
+		}
+	}
+	for _, text := range no {
+		if hasUseWhen(text) {
+			t.Errorf("hasUseWhen(%q) = true, want false", text)
+		}
+	}
+
+	// A misleading substring no longer suppresses the generated clause.
+	spec := SkillSpec{Name: "X", Description: "Encourages reuse whenever possible.", Triggers: []string{"You lint configs."}}
+	if got := skillDescription(spec); !strings.HasSuffix(got, "Use when you lint configs.") {
+		t.Errorf("skillDescription() = %q, want a Use when clause appended", got)
+	}
+}
+
+func TestScaffoldRewritesInvalidSlugInManifest(t *testing.T) {
+	t.Parallel()
+
+	spec := SkillSpec{
+		Name:        "Research Ops",
+		Slug:        "Bad Slug!!",
+		Description: "x",
+		Tools:       []ToolSpec{{Name: "t", Command: "t", Description: "d"}},
+	}
+	outDir := filepath.Join(t.TempDir(), "bad-slug")
+	if err := scaffold(spec, outDir, false); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(outDir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written SkillSpec
+	if err := json.Unmarshal(manifest, &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.Slug != "bad-slug" {
+		t.Errorf("manifest slug = %q, want bad-slug", written.Slug)
+	}
+	skill, err := os.ReadFile(filepath.Join(outDir, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fields := parseFrontmatter(t, string(skill)); fields["name"] != "bad-slug" {
+		t.Errorf("frontmatter name = %q, want bad-slug", fields["name"])
+	}
+	if !strings.Contains(string(skill), "- Slug: `bad-slug`") {
+		t.Errorf("Metadata slug line was not rewritten:\n%s", firstLines(string(skill), 14))
 	}
 }

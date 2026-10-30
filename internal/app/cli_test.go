@@ -47,7 +47,7 @@ func runCapturing(t *testing.T, args ...string) (code int, stdout, stderr string
 
 func TestHelpAndVersionExitZero(t *testing.T) {
 	cases := [][]string{
-		{"-h"}, {"--help"}, {"-help"}, {"help"},
+		{"-h"}, {"--help"}, {"-help"}, {"help"}, {"help", "--help"}, {"help", "-h"},
 		{"help", "init"}, {"help", "draft"}, {"help", "tui"},
 		{"init", "-h"}, {"init", "--help"},
 		{"draft", "-h"}, {"draft", "--help"},
@@ -231,5 +231,78 @@ func TestDraftPrintsReviewNoteAndKeepsSpecSchema(t *testing.T) {
 		default:
 			t.Errorf("unexpected new spec field %q", key)
 		}
+	}
+}
+
+func TestHelpFlagAfterHelpPrintsTopLevelUsage(t *testing.T) {
+	_, top, _ := runCapturing(t, "help")
+	for _, args := range [][]string{{"help", "--help"}, {"help", "-h"}} {
+		code, out, _ := runCapturing(t, args...)
+		if code != 0 || out != top {
+			t.Errorf("%v: code %d, output differs from top-level help", args, code)
+		}
+	}
+}
+
+func TestInitRejectsNonASCIINameWithoutSlug(t *testing.T) {
+	dir := t.TempDir()
+	specPath := writeSpecFile(t, dir, SkillSpec{
+		Name:        "检索评估",
+		Description: "x",
+		Tools:       []ToolSpec{{Name: "t", Command: "t", Description: "d"}},
+	})
+	out := filepath.Join(dir, "out")
+	code, stdout, stderr := runCapturing(t, "init", "-spec", specPath, "-out", out)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout != "" || strings.Count(strings.TrimSpace(stderr), "\n") != 0 || !strings.Contains(stderr, "set an ASCII `slug` in the spec") {
+		t.Errorf("stdout %q stderr %q, want a one-line slug message on stderr", stdout, stderr)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("no output directory should be created")
+	}
+
+	// With an ASCII slug the same spec works.
+	specPath = writeSpecFile(t, dir, SkillSpec{
+		Name:        "检索评估",
+		Slug:        "retrieval-eval",
+		Description: "x",
+		Tools:       []ToolSpec{{Name: "t", Command: "t", Description: "d"}},
+	})
+	if code, _, stderr := runCapturing(t, "init", "-spec", specPath, "-out", filepath.Join(dir, "retrieval-eval")); code != 0 || stderr != "" {
+		t.Errorf("with slug: code %d stderr %q", code, stderr)
+	}
+}
+
+func TestInitNotesWhenUseWhenClauseDoesNotFit(t *testing.T) {
+	dir := t.TempDir()
+	specPath := writeSpecFile(t, dir, SkillSpec{
+		Name:        "Long One",
+		Description: strings.Repeat("word ", 58) + "end.",
+		Triggers:    []string{"You need to do something that is quite involved indeed."},
+		Tools:       []ToolSpec{{Name: "t", Command: "t", Description: "d"}},
+	})
+	code, _, stderr := runCapturing(t, "init", "-spec", specPath, "-out", filepath.Join(dir, "long-one"))
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.HasPrefix(stderr, "note:") || !strings.Contains(stderr, `"Use when" clause`) || strings.Count(strings.TrimSpace(stderr), "\n") != 0 {
+		t.Errorf("stderr = %q, want a one-line note about the omitted clause", stderr)
+	}
+}
+
+func TestDraftNotesMissingSlugForNonASCIIName(t *testing.T) {
+	dir := t.TempDir()
+	brief := filepath.Join(dir, "brief.md")
+	if err := os.WriteFile(brief, []byte("# 检索评估\n检索评估技能\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runCapturing(t, "draft", "-brief", brief)
+	if code != 0 || !strings.Contains(stderr, "set an ASCII `slug` in the spec before init") {
+		t.Errorf("code %d, stderr %q", code, stderr)
+	}
+	if strings.Contains(stdout, `"slug"`) {
+		t.Errorf("draft must not invent a slug for a non-ASCII name:\n%s", stdout)
 	}
 }

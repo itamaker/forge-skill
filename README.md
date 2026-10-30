@@ -51,7 +51,7 @@ This launches the interactive Bubble Tea terminal UI.
 You can still use the direct command form:
 
 ```bash
-skillforge init -spec examples/skill.json -out /tmp/research-skill
+skillforge init -spec examples/skill.json -out /tmp/researchops
 ```
 
 Or draft a richer spec from a short brief plus a tool catalog:
@@ -70,8 +70,8 @@ The generated directory includes:
 
 ### Frontmatter and folder name
 
-- `name` is the spec `slug` (or the slugified `name`), sanitised to lowercase letters, digits and single hyphens, at most 64 characters.
-- `description` is the spec description as one YAML-quoted line, at most 300 characters. If it has no "Use when" clause and the spec has `triggers`, a `Use when ...` clause built from the first one or two triggers is appended.
+- `name` is the spec `slug` (or the slugified `name`), sanitised to ASCII lowercase letters, digits and single hyphens, at most 64 characters. If neither yields a usable name (for example a name written only in CJK characters), `init` exits `1` with `set an ASCII `slug` in the spec`; `draft` leaves `slug` out and says so on stderr.
+- `description` is the spec description as one YAML-quoted line, at most 300 characters. If it has no "Use when" clause and the spec has `triggers`, a `Use when ...` clause built from the first one or two triggers is appended; if it does not fit in 300 characters, `init` prints a `note:` on stderr and leaves it out.
 - Claude Code and Codex expect the skill folder name to equal `name`. Name the `-out` folder after the slug; `init` prints a one-line warning on stderr (exit code unchanged) when it differs.
 
 ### Review drafted specs before `init`
@@ -104,7 +104,7 @@ go run .
 Or run the non-interactive command directly:
 
 ```bash
-go run . init -spec examples/skill.json -out /tmp/research-skill
+go run . init -spec examples/skill.json -out /tmp/researchops
 ```
 
 Use `-force` if you want to overwrite an existing output directory.

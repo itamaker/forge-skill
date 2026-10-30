@@ -242,7 +242,7 @@ func buildTUIActions() []tuiAction {
 			description: "Generate a skill scaffold from a JSON spec",
 			fields: []tuiField{
 				{key: "spec", label: "Spec Path", placeholder: "examples/skill.json"},
-				{key: "out", label: "Output Directory", placeholder: "/tmp/research-skill"},
+				{key: "out", label: "Output Directory", placeholder: "/tmp/researchops"},
 				{key: "force", label: "Force Overwrite", placeholder: "false", optional: true},
 			},
 			run: func(values map[string]string) (string, error) {

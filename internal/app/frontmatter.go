@@ -3,6 +3,9 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -20,22 +23,22 @@ const (
 	maxShortDescriptionLen = 64
 	// maxDefaultPromptTaskLen bounds the task text inside default_prompt.
 	maxDefaultPromptTaskLen = 160
-
-	fallbackSkillName = "generated-skill"
 )
 
 // skillName returns the Agent Skills `name` for a spec: lowercase ASCII
 // letters, digits and single hyphens, no leading or trailing hyphen, at most
 // 64 characters. It prefers the spec slug and falls back to the display name.
+// It returns "" when neither yields a usable name (for example a name written
+// only in CJK characters); callers must treat that as an error.
 func skillName(spec SkillSpec) string {
 	if name := sanitizeSkillName(spec.Slug); name != "" {
 		return name
 	}
-	if name := sanitizeSkillName(spec.Name); name != "" {
-		return name
-	}
-	return fallbackSkillName
+	return sanitizeSkillName(spec.Name)
 }
+
+// errNoSkillName is returned when a spec has no usable ASCII skill name.
+var errNoSkillName = errors.New("spec has no usable ASCII skill name; set an ASCII `slug` in the spec")
 
 func sanitizeSkillName(raw string) string {
 	var builder strings.Builder
@@ -63,11 +66,19 @@ func sanitizeSkillName(raw string) string {
 // "Use when" clause and the spec has triggers, a concise clause built from the
 // first one or two triggers. The result never exceeds maxDescriptionLen.
 func skillDescription(spec SkillSpec) string {
+	desc, _ := buildDescription(spec)
+	return desc
+}
+
+// buildDescription is skillDescription plus human-readable notes about content
+// that had to be dropped to stay within maxDescriptionLen.
+func buildDescription(spec SkillSpec) (string, []string) {
 	desc := collapseSpace(spec.Description)
 	if desc == "" {
 		desc = collapseSpace(spec.Name)
 	}
 
+	var notes []string
 	if !hasUseWhen(desc) {
 		var triggers []string
 		for _, trigger := range spec.Triggers {
@@ -82,31 +93,58 @@ func skillDescription(spec SkillSpec) string {
 		for n := len(triggers); n > 0; n-- {
 			candidate := base + " Use when " + strings.Join(triggers[:n], " or ") + "."
 			if utf8.RuneCountInString(candidate) <= maxDescriptionLen {
-				return candidate
+				return candidate, nil
 			}
 		}
+		if len(triggers) > 0 {
+			notes = append(notes, "note: the description has no room for a \"Use when\" clause within the 300-character limit; shorten the description or add the clause yourself")
+		}
 	}
-	return truncateWords(desc, maxDescriptionLen)
+	if utf8.RuneCountInString(desc) > maxDescriptionLen {
+		notes = append(notes, "note: the description was cut to the 300-character limit")
+	}
+	return truncateWords(desc, maxDescriptionLen), notes
 }
 
+var useWhenPattern = regexp.MustCompile(`(?i)\buse when\b`)
+
+// hasUseWhen reports whether text already contains a "use when" clause as a
+// whole phrase. Negated uses ("do not use when ...") do not count.
 func hasUseWhen(text string) bool {
-	return strings.Contains(strings.ToLower(text), "use when")
+	for _, loc := range useWhenPattern.FindAllStringIndex(text, -1) {
+		before := strings.ToLower(strings.TrimRight(text[:loc[0]], " "))
+		if strings.HasSuffix(before, "not") || strings.HasSuffix(before, "never") || strings.HasSuffix(before, "n't") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // triggerClause turns a trigger such as "You need a repeatable review." into
-// the tail of a "Use when ..." clause: "you need a repeatable review".
+// the tail of a "Use when ..." clause: "you need a repeatable review". Only a
+// plain capitalised first word is lowercased; "GitHub", "OAuth", "Q&A",
+// "SKILL.md" and the pronoun "I" are left alone.
 func triggerClause(trigger string) string {
 	trigger = strings.TrimRight(collapseSpace(trigger), ".;:!, ")
 	if trigger == "" {
 		return ""
 	}
-	first, size := utf8.DecodeRuneInString(trigger)
-	rest := trigger[size:]
-	// Keep acronyms and identifiers ("RAG runs", "SKILL.md") intact.
-	if unicode.IsUpper(first) {
-		next, _ := utf8.DecodeRuneInString(rest)
-		if !unicode.IsUpper(next) && !unicode.IsDigit(next) {
-			trigger = string(unicode.ToLower(first)) + rest
+	token := trigger
+	if i := strings.IndexByte(trigger, ' '); i >= 0 {
+		token = trigger[:i]
+	}
+	first, size := utf8.DecodeRuneInString(token)
+	if unicode.IsUpper(first) && token != "I" && !strings.HasPrefix(token, "I'") && !strings.HasPrefix(token, "I\u2019") {
+		plain := true
+		for _, r := range token[size:] {
+			if unicode.IsUpper(r) {
+				plain = false
+				break
+			}
+		}
+		if plain {
+			trigger = string(unicode.ToLower(first)) + trigger[size:]
 		}
 	}
 	return trigger
@@ -185,6 +223,9 @@ func collapseSpace(text string) string {
 // valid YAML double-quoted scalar, so this escapes quotes, backslashes,
 // newlines and control characters and is safe for values starting with
 // characters such as '*', '&', '!', '@', '#', '[' or containing ': ' or ' #'.
+// JSON leaves some characters raw that a YAML stream may not contain (DEL, C1
+// controls, U+FFFE/U+FFFF) or that YAML parsers treat as line breaks (U+0085);
+// those are written as \uXXXX escapes.
 func yamlQuote(text string) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -192,7 +233,35 @@ func yamlQuote(text string) string {
 	if err := enc.Encode(text); err != nil {
 		return `""`
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	encoded := strings.TrimSuffix(buf.String(), "\n")
+
+	var out strings.Builder
+	for _, r := range encoded {
+		if yamlSafeRune(r) {
+			out.WriteRune(r)
+			continue
+		}
+		fmt.Fprintf(&out, `\u%04X`, r)
+	}
+	return out.String()
+}
+
+// yamlSafeRune reports whether r may appear raw in a YAML double-quoted
+// scalar: the YAML c-printable set minus NEL and the byte order mark.
+func yamlSafeRune(r rune) bool {
+	switch {
+	case r == '\t' || r == '\n' || r == '\r':
+		return true
+	case r >= 0x20 && r <= 0x7E:
+		return true
+	case r >= 0xA0 && r <= 0xD7FF:
+		return true
+	case r >= 0xE000 && r <= 0xFFFD:
+		return r != 0xFEFF
+	case r >= 0x10000 && r <= 0x10FFFF:
+		return true
+	}
+	return false
 }
 
 // yamlName renders the skill name. It is unquoted unless YAML would read it

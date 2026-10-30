@@ -10,7 +10,7 @@ test:
 	go test ./...
 
 example:
-	go run . init -spec examples/skill.json -out /tmp/research-skill -force
+	go run . init -spec examples/skill.json -out /tmp/researchops -force
 
 release-check:
 	goreleaser check

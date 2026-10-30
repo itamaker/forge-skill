@@ -61,6 +61,10 @@ func runInit(args []string) int {
 	}
 
 	fmt.Printf("generated skill scaffold in %s\n", *outDir)
+	_, notes := buildDescription(spec)
+	for _, note := range notes {
+		fmt.Fprintln(os.Stderr, note)
+	}
 	if warning := folderNameWarning(spec, *outDir); warning != "" {
 		fmt.Fprintln(os.Stderr, warning)
 	}
@@ -83,6 +87,7 @@ func folderNameWarning(spec SkillSpec, outDir string) string {
 
 const (
 	draftReviewNote          = "review: triggers, constraints, checks and workflow are generated from category defaults; edit them before init"
+	draftNoSlugNote          = "review: the name has no ASCII letters or digits, so no slug was generated; set an ASCII `slug` in the spec before init"
 	draftPlaceholderToolNote = "review: no tool was selected from a catalog; the spec contains the placeholder tool \"replace-me\", replace it before init"
 )
 
@@ -121,6 +126,9 @@ func runDraft(args []string) int {
 
 	spec := draftSpec(string(brief), catalog, *name, *maxTools)
 	fmt.Fprintln(os.Stderr, draftReviewNote)
+	if skillName(spec) == "" {
+		fmt.Fprintln(os.Stderr, draftNoSlugNote)
+	}
 	if len(spec.Tools) == 1 && spec.Tools[0].Name == placeholderTool().Name {
 		fmt.Fprintln(os.Stderr, draftPlaceholderToolNote)
 	}

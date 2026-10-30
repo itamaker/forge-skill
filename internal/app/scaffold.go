@@ -10,6 +10,11 @@ import (
 )
 
 func scaffold(spec SkillSpec, outDir string, force bool) error {
+	// Validate before touching the filesystem (-force removes outDir).
+	if skillName(spec) == "" {
+		return errNoSkillName
+	}
+
 	if info, err := os.Stat(outDir); err == nil {
 		if !force {
 			return fmt.Errorf("output directory %s already exists; use -force to overwrite", outDir)

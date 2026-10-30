@@ -376,21 +376,11 @@ func overlapScore(a map[string]int, b map[string]int) int {
 	return score
 }
 
+// slugify returns the ASCII skill-name form of name (lowercase letters,
+// digits, single hyphens). It is empty when name has no ASCII letters or
+// digits, so a drafted spec never advertises a slug that init would reject.
 func slugify(name string) string {
-	var builder strings.Builder
-	prevDash := false
-	for _, r := range strings.ToLower(name) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-			prevDash = false
-			continue
-		}
-		if !prevDash && builder.Len() > 0 {
-			builder.WriteByte('-')
-			prevDash = true
-		}
-	}
-	return strings.Trim(builder.String(), "-")
+	return sanitizeSkillName(name)
 }
 
 func containsTag(tags []string, target string) bool {

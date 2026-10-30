@@ -60,7 +60,7 @@ func runHelp(args []string) int {
 	case "tui", "interactive":
 		fmt.Fprint(os.Stdout, tuiUsageText)
 		return 0
-	case "help", "version":
+	case "help", "version", "-h", "-help", "--help":
 		fmt.Fprint(os.Stdout, usageText)
 		return 0
 	default:
@@ -112,7 +112,7 @@ Usage:
 
 Examples:
   skillforge draft -brief examples/brief.md -catalog examples/tools.json -out /tmp/spec.json
-  skillforge init -spec /tmp/spec.json -out /tmp/research-skill
+  skillforge init -spec /tmp/spec.json -out /tmp/retrieval-evaluator
 
 Notes:
   -out for init is the skill folder; name it after the skill slug (the "name"
